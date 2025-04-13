@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>テンポラリーペースメーカーシミュレーター</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <style>
+        /* Custom Styles */
+        body { font-family: 'Inter', sans-serif; background-color: #f0f4f8; }
+        .control-panel label, .rhythm-panel label, .simulation-options label { display: block; margin-bottom: 0.5rem; font-weight: 500; color: #4a5568; }
+        .control-panel input[type="range"], .rhythm-panel select { width: 100%; cursor: pointer; }
+        .control-panel .value-display { font-weight: 600; color: #2d3748; min-width: 50px; text-align: right; }
+        .ecg-monitor-container { background-color: #000; border: 2px solid #4a5568; border-radius: 0.5rem; overflow: hidden; display: flex; height: 300px; }
+        .hr-display-large { flex: 0 0 120px; display: flex; flex-direction: column; justify-content: center; align-items: center; color: #00ff00; border-right: 1px solid #333; padding: 1rem; background-color: #0a0a0a; }
+        .hr-label { font-size: 1rem; font-weight: bold; color: #aaa; }
+        .hr-value { font-size: 4rem; font-weight: bold; line-height: 1; }
+        .hr-unit { font-size: 1rem; font-weight: bold; color: #aaa; margin-top: 0.25rem; }
+        .ecg-canvas-container { flex: 1; position: relative; }
+        #ecgCanvas { display: block; width: 100%; height: 100%; }
+        .status-display, .simulation-options { background-color: #e2e8f0; border-radius: 0.5rem; padding: 1rem; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); }
+        .status-item { display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.875rem; }
+        .status-item span:first-child { color: #4a5568; }
+        .status-item span:last-child { font-weight: 600; color: #1a202c; }
+        .alarm { color: #e53e3e; font-weight: bold; text-align: center; margin-top: 0.5rem; min-height: 1.5em; }
+        .rhythm-panel { background-color: #fff; padding: 1rem; border-radius: 0.5rem; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); }
+        .rhythm-panel select { background-color: #fff; border: 1px solid #cbd5e0; border-radius: 0.375rem; padding: 0.5rem; font-size: 0.875rem; }
+        .lamp { width: 1rem; height: 1rem; border-radius: 50%; background-color: #9ca3af; transition: background-color 0.1s ease-in-out, box-shadow 0.2s ease-in-out; box-shadow: 0 0 2px rgba(0, 0, 0, 0.3); display: inline-block; vertical-align: middle; }
+        .lamp.sense-on { background-color: #3b82f6; box-shadow: 0 0 8px 2px rgba(59, 130, 246, 0.7); }
+        .lamp.pace-on { background-color: #ef4444; box-shadow: 0 0 8px 2px rgba(239, 68, 68, 0.7); }
+        .form-checkbox { appearance: none; padding: 0; print-color-adjust: exact; display: inline-block; vertical-align: middle; background-origin: border-box; user-select: none; flex-shrink: 0; height: 1rem; width: 1rem; color: #3b82f6; background-color: #fff; border-color: #9ca3af; border-width: 1px; border-radius: 0.25rem; }
+        .form-checkbox:checked { background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e"); border-color: transparent; background-color: currentColor; background-size: 100% 100%; background-position: center; background-repeat: no-repeat; }
+        .form-checkbox:focus { outline: 2px solid transparent; outline-offset: 2px; border-color: #3b82f6; }
+        .hidden { display: none; }
+        #noiseButton { background-color: #f59e0b; color: white; font-weight: bold; padding: 0.5rem 1rem; border-radius: 0.375rem; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); transition: background-color 0.15s ease-in-out; cursor: pointer; user-select: none; touch-action: manipulation; }
+        #noiseButton:hover { background-color: #d97706; }
+        #noiseButton:active { background-color: #b45309; transform: scale(0.98); }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <h1 class="text-2xl md:text-3xl font-bold mb-6 text-center text-gray-800">テンポラリーペースメーカーシミュレーター</h1>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <div class="lg:col-span-1 space-y-6">
+
+            <div class="control-panel bg-white p-4 rounded-lg shadow">
+                <h2 class="text-lg font-semibold mb-4 border-b pb-2 text-gray-700">ペースメーカー設定</h2>
+                 <div> <label for="pacingRate">ペーシングレート (bpm)</label> <div class="flex items-center space-x-2"> <input type="range" id="pacingRate" name="pacingRate" min="30" max="180" value="60" class="flex-grow accent-blue-500"> <span id="pacingRateValue" class="value-display">60</span> </div> </div>
+                 <div class="mt-4"> <label for="pacingOutput">ペーシング出力 (mA)</label> <div class="flex items-center space-x-2"> <input type="range" id="pacingOutput" name="pacingOutput" min="0.1" max="20" step="0.1" value="5.0" class="flex-grow accent-red-500"> <span id="pacingOutputValue" class="value-display">5.0</span> </div> </div>
+                 <div class="mt-4"> <label for="sensitivity">感度 (mV)</label> <div class="flex items-center space-x-2"> <input type="range" id="sensitivity" name="sensitivity" min="0.5" max="20" step="0.1" value="2.0" class="flex-grow accent-green-500"> <span id="sensitivityValue" class="value-display">2.0</span> </div> </div>
+                 <div class="mt-4"> <label>モード</label> <div class="bg-gray-100 p-2 rounded text-center font-medium text-gray-600">VVI</div> </div>
+                 <div class="mt-4"> <label>ステータスランプ</label> <div class="flex items-center space-x-4 mt-2"> <div class="flex items-center space-x-1"> <div id="senseLamp" class="lamp"></div> <span class="text-sm text-gray-600">SENSE</span> </div> <div class="flex items-center space-x-1"> <div id="paceLamp" class="lamp"></div> <span class="text-sm text-gray-600">PACE</span> </div> </div> </div>
+            </div>
+
+            <div class="control-panel bg-white p-4 rounded-lg shadow">
+                <h2 class="text-lg font-semibold mb-4 border-b pb-2 text-gray-700">患者パラメータ設定</h2>
+                <div> <label for="intrinsicRate">基礎自己脈レート (bpm)</label> <div class="flex items-center space-x-2"> <input type="range" id="intrinsicRate" name="intrinsicRate" min="20" max="120" value="60" class="flex-grow accent-gray-500"> <span id="intrinsicRateValue" class="value-display">60</span> </div> </div>
+                <div class="mt-4"> <label for="pacingThreshold">ペーシング閾値 (mA)</label> <div class="flex items-center space-x-2"> <input type="range" id="pacingThreshold" name="pacingThreshold" min="0.2" max="5.0" step="0.1" value="1.5" class="flex-grow accent-gray-500"> <span id="pacingThresholdValue" class="value-display">1.5</span> </div> </div>
+                <div class="mt-4"> <label for="rWaveAmplitude">自己脈/PVC波高値 (mV)</label> <div class="flex items-center space-x-2"> <input type="range" id="rWaveAmplitude" name="rWaveAmplitude" min="0.5" max="15" step="0.1" value="8.0" class="flex-grow accent-gray-500"> <span id="rWaveAmplitudeValue" class="value-display">8.0</span> </div> </div>
+                 <div class="simulation-options mt-6 bg-blue-50 p-3 rounded-md border border-blue-200">
+                    <h3 class="text-md font-semibold mb-3 text-blue-800">シミュレーションオプション</h3>
+                    <label for="overdriveSuppression" class="flex items-center space-x-2 cursor-pointer"> <input type="checkbox" id="overdriveSuppression" name="overdriveSuppression" class="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500"> <span class="text-sm font-medium text-gray-700">オーバードライブ抑制</span> </label>
+                    <p class="text-xs text-gray-500 mt-1 mb-3 ml-7">レート↓で50%確率 5秒ポーズ</p>
+                    <label for="intermittentLoss" class="flex items-center space-x-2 cursor-pointer"> <input type="checkbox" id="intermittentLoss" name="intermittentLoss" class="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500"> <span class="text-sm font-medium text-gray-700">間欠的ペーシング不全</span> </label>
+                    <p class="text-xs text-gray-500 mt-1 mb-3 ml-7">6回に1回 強制Loss</p>
+                    <label for="unidirectionalBlock" class="flex items-center space-x-2 cursor-pointer"> <input type="checkbox" id="unidirectionalBlock" name="unidirectionalBlock" class="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500"> <span class="text-sm font-medium text-gray-700">CaptureBeat (自己脈非抑制)</span> </label>
+                    <p class="text-xs text-gray-500 mt-1 ml-7">ペーシング時に自己脈抑制なし (3:1伝導, 不応期あり)</p>
+                </div>
+            </div>
+
+            <div class="rhythm-panel">
+                <h2 class="text-lg font-semibold mb-4 border-b pb-2 text-gray-700">リズム選択</h2>
+                 <div>
+                    <label for="rhythmMode">モード選択</label>
+                    <select id="rhythmMode" name="rhythmMode" class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                        <option value="normal">通常 (基礎自己脈 + VVI)</option>
+                        <option value="stElevation">ST上昇</option>
+                        <option value="junctional">接合部調律 (Junctional)</option>
+                        <option value="ventricular_escape">心室補充調律 (Vent Escape)</option>
+                        <option value="wpw">WPW (顕性Kent)</option>
+                        <option value="pac">PAC 散発</option>
+                        <option value="pvc">PVC 散発</option>
+                        <option value="avnrt">AVNRT (Trigger)</option>
+                        <option value="ort">ORT</option>
+                        <option value="vt">VT (心室頻拍)</option>
+                        <option value="afib">Afib (心房細動)</option>
+                        <option value="afl">AFL (心房粗動 3:1)</option>
+                        <option value="vf">VF (心室細動)</option>
+                    </select>
+                 </div>
+                 <div id="avnrtTriggerContainer" class="mt-4 hidden">
+                    <button id="avnrtTriggerButton" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out"> AVNRT 開始シーケンス実行 </button>
+                 </div>
+                 <div class="mt-4">
+                    <button id="noiseButton" class="w-full">ノイズ発生 (押している間)</button>
+                 </div>
+            </div>
+        </div>
+
+        <div class="lg:col-span-2 space-y-6">
+             <div class="ecg-monitor-container">
+                <div class="hr-display-large"> <span class="hr-label">HR</span> <span id="hrValueLarge" class="hr-value">--</span> <span class="hr-unit">bpm</span> </div>
+                <div class="ecg-canvas-container"> <canvas id="ecgCanvas"></canvas> </div>
+            </div>
+             <div class="status-display">
+                <h2 class="text-lg font-semibold mb-3 text-gray-700">シミュレーションステータス</h2>
+                <div class="status-item"> <span>現在の心拍数 (計算値):</span> <span id="currentHR">--</span> </div>
+                <div class="status-item"> <span>ペーシング状態:</span> <span id="pacingStatus">停止中</span> </div>
+                <div class="status-item"> <span>センシング状態:</span> <span id="sensingStatus">--</span> </div>
+                <div class="status-item"> <span>キャプチャ状態:</span> <span id="captureStatus">--</span> </div>
+                <div id="alarmDisplay" class="alarm"></div>
+            </div>
+             <div class="flex justify-center space-x-4 mt-4">
+                <button id="startButton" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg shadow transition duration-150 ease-in-out"> 開始 </button>
+                <button id="stopButton" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-lg shadow transition duration-150 ease-in-out" disabled> 停止 </button>
+            </div>
+        </div>
+    </div>
+
+     <footer class="text-center text-xs text-blue-700 mt-8 pb-4">
+        <p>TOSEI_GHP_MECenter_Baba</p>
+        <p class="mt-1">無断使用、配付禁止</p>
+    </footer>
+    <script>
+        // --- DOM Element Retrieval ---
+        const pacingRateSlider = document.getElementById('pacingRate'); const pacingRateValue = document.getElementById('pacingRateValue'); const pacingOutputSlider = document.getElementById('pacingOutput'); const pacingOutputValue = document.getElementById('pacingOutputValue'); const sensitivitySlider = document.getElementById('sensitivity'); const sensitivityValue = document.getElementById('sensitivityValue'); const intrinsicRateSlider = document.getElementById('intrinsicRate'); const intrinsicRateValue = document.getElementById('intrinsicRateValue'); const pacingThresholdSlider = document.getElementById('pacingThreshold'); const pacingThresholdValue = document.getElementById('pacingThresholdValue'); const rWaveAmplitudeSlider = document.getElementById('rWaveAmplitude'); const rWaveAmplitudeValue = document.getElementById('rWaveAmplitudeValue'); const rhythmModeSelect = document.getElementById('rhythmMode'); const overdriveSuppressionCheckbox = document.getElementById('overdriveSuppression'); const intermittentLossCheckbox = document.getElementById('intermittentLoss');
+        const unidirectionalBlockCheckbox = document.getElementById('unidirectionalBlock');
+        const avnrtTriggerContainer = document.getElementById('avnrtTriggerContainer'); const avnrtTriggerButton = document.getElementById('avnrtTriggerButton');
+        const noiseButton = document.getElementById('noiseButton');
+
+        const startButton = document.getElementById('startButton'); const stopButton = document.getElementById('stopButton'); const hrValueLargeDisplay = document.getElementById('hrValueLarge'); const currentHRDisplay = document.getElementById('currentHR'); const pacingStatusDisplay = document.getElementById('pacingStatus'); const sensingStatusDisplay = document.getElementById('sensingStatus'); const captureStatusDisplay = document.getElementById('captureStatus'); const alarmDisplay = document.getElementById('alarmDisplay'); const senseLamp = document.getElementById('senseLamp'); const paceLamp = document.getElementById('paceLamp'); const canvas = document.getElementById('ecgCanvas'); const ctx = canvas.getContext('2d');
+
+        // --- Audio Context and Synth ---
+        let audioContextStarted = false; let beepSynth = null;
+        function initializeAudio() { if (!audioContextStarted && Tone.context.state !== 'running') { Tone.start().then(() => { console.log('Audio context started.'); audioContextStarted = true; if (!beepSynth) { beepSynth = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.005, decay: 0.1, sustain: 0.01, release: 0.05 }, volume: -12 }).toDestination(); } }).catch(e => console.error("Audio context start failed:", e)); } else if (audioContextStarted && !beepSynth) { beepSynth = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.005, decay: 0.1, sustain: 0.01, release: 0.05 }, volume: -12 }).toDestination(); } }
+        function playBeep() { if (beepSynth && audioContextStarted && Tone.context.state === 'running') { try { beepSynth.triggerAttackRelease('A5', '32n', Tone.now()); } catch (error) { console.error("Error playing beep:", error); } } }
+
+        // --- Simulation Variables ---
+        let simulationRunning = false; let animationFrameId = null; let lastTimestamp = 0; let timeElapsed = 0;
+        let pacingRate = parseInt(pacingRateSlider.value); let pacingInterval = 60000 / pacingRate; let pacingOutput = parseFloat(pacingOutputSlider.value); let sensitivity = parseFloat(sensitivitySlider.value); let intrinsicRate = parseInt(intrinsicRateSlider.value); let intrinsicInterval = intrinsicRate > 0 ? 60000 / intrinsicRate : Infinity; let pacingThreshold = parseFloat(pacingThresholdSlider.value); let rWaveAmplitude = parseFloat(rWaveAmplitudeSlider.value);
+        let currentRhythmMode = rhythmModeSelect.value; let nextIntrinsicBeatTime = intrinsicInterval; let nextPacingTime = pacingInterval; let lastBeatTime = 0; let heartRateHistory = []; let lastHrValue = '--'; let beatCounter = 0; const ectopicFrequency = 7; const vtRate = 150; const vtInterval = 60000 / vtRate; let nextVtBeatTime = Infinity; const aflRate = 300; const aflInterval = 60000 / aflRate; let nextAflWaveTime = 0; let aflWaveCount = 0; const afibMeanRate = 85; let afibRateVariation = 80;
+        let vfPhase1 = Math.random() * Math.PI * 2, vfPhase2 = Math.random() * Math.PI * 2, vfPhase3 = Math.random() * Math.PI * 2; let vfCurrentAmplitude = 6; const vfAmplitudeDecayFactor = 0.9995; let fibWaveNoiseOffset = 0;
+        let overdriveSuppressionEnabled = false; let lastPacingRate = parseInt(pacingRateSlider.value); let isPauseActive = false; let pauseEndTime = 0;
+        let intermittentLossEnabled = false; let pacingAttemptCounter = 0;
+        let unidirectionalBlockEnabled = false; let intrinsicAttemptCounter = 0;
+        let avnrtState = 'idle'; let avnrtBeatCount = 0; const avnrtSvtRate = 150; const avnrtSvtInterval = 60000 / avnrtSvtRate; const avnrtPrProlongation = 100;
+        let isNoiseActive = false;
+        const noiseSpikeInterval = 25; // Interval (ms) to generate noise spikes
+        let lastNoiseSpikeTime = 0; // Time the last noise spike was generated
+        let isOversensingForced = false; // Flag for forced oversensing state
+
+        // ECG Drawing Variables
+        let ecgWidth = canvas.clientWidth; let ecgHeight = canvas.clientHeight; canvas.width = ecgWidth * window.devicePixelRatio; canvas.height = ecgHeight * window.devicePixelRatio; ctx.scale(window.devicePixelRatio, window.devicePixelRatio); const timeScale = 150; const amplitudeScale = 8; let ecgData = []; const stElevationAmount = 2 * amplitudeScale;
+        const ARP = 250; // Absolute Refractory Period in ms
+        const defaultPrInterval = 120; // Default PR interval in ms
+
+
+        // --- Event Listeners ---
+        overdriveSuppressionCheckbox.addEventListener('change', (e) => { overdriveSuppressionEnabled = e.target.checked; if (!overdriveSuppressionEnabled && isPauseActive) { isPauseActive = false; nextIntrinsicBeatTime = intrinsicRate > 0 ? timeElapsed + intrinsicInterval : Infinity; } });
+        intermittentLossCheckbox.addEventListener('change', (e) => { intermittentLossEnabled = e.target.checked; pacingAttemptCounter = 0; });
+        unidirectionalBlockCheckbox.addEventListener('change', (e) => { unidirectionalBlockEnabled = e.target.checked; intrinsicAttemptCounter = 0; });
+        avnrtTriggerButton.addEventListener('click', () => { if (simulationRunning && currentRhythmMode === 'avnrt' && avnrtState === 'idle') { avnrtState = 'trigger_pac'; nextIntrinsicBeatTime = timeElapsed + 50; avnrtTriggerButton.disabled = true; avnrtTriggerButton.textContent = "AVNRT シーケンス実行中..."; } });
+        noiseButton.addEventListener('mousedown', () => { isNoiseActive = true; });
+        noiseButton.addEventListener('touchstart', (e) => { isNoiseActive = true; e.preventDefault(); }, { passive: false });
+        noiseButton.addEventListener('mouseup', () => { isNoiseActive = false; });
+        noiseButton.addEventListener('mouseleave', () => { if (isNoiseActive) { isNoiseActive = false; } });
+        noiseButton.addEventListener('touchend', () => { isNoiseActive = false; });
+        noiseButton.addEventListener('touchcancel', () => { isNoiseActive = false; });
+        pacingRateSlider.addEventListener('input', (e) => { const newPacingRate = parseInt(e.target.value); pacingRateValue.textContent = newPacingRate; pacingInterval = 60000 / newPacingRate; if (simulationRunning && overdriveSuppressionEnabled && newPacingRate < lastPacingRate) { if (Math.random() < 0.5) { isPauseActive = true; pauseEndTime = timeElapsed + 5000; nextIntrinsicBeatTime = Infinity; const base = ecgHeight / 2; ecgData.push({ time: timeElapsed, value: base }); } } lastPacingRate = newPacingRate; if (simulationRunning) { nextPacingTime = lastBeatTime + pacingInterval; } });
+        pacingOutputSlider.addEventListener('input', (e) => { pacingOutput = parseFloat(e.target.value); pacingOutputValue.textContent = pacingOutput.toFixed(1);});
+        sensitivitySlider.addEventListener('input', (e) => { sensitivity = parseFloat(e.target.value); sensitivityValue.textContent = sensitivity.toFixed(1);});
+        intrinsicRateSlider.addEventListener('input', (e) => { intrinsicRate = parseInt(e.target.value); intrinsicRateValue.textContent = intrinsicRate; intrinsicInterval = intrinsicRate > 0 ? 60000 / intrinsicRate : Infinity; if (simulationRunning && !isPauseActive && ['normal', 'stElevation', 'pac', 'pvc', 'wpw', 'avnrt'].includes(currentRhythmMode)) { nextIntrinsicBeatTime = lastBeatTime + intrinsicInterval;} });
+        pacingThresholdSlider.addEventListener('input', (e) => { pacingThreshold = parseFloat(e.target.value); pacingThresholdValue.textContent = pacingThreshold.toFixed(1);});
+        rWaveAmplitudeSlider.addEventListener('input', (e) => { rWaveAmplitude = parseFloat(e.target.value); rWaveAmplitudeValue.textContent = rWaveAmplitude.toFixed(1);});
+        rhythmModeSelect.addEventListener('change', (e) => { currentRhythmMode = e.target.value; if (currentRhythmMode === 'avnrt') { avnrtTriggerContainer.classList.remove('hidden'); } else { avnrtTriggerContainer.classList.add('hidden'); } if (simulationRunning) { resetSimulationState(true); } else { resetSimulationState(false); drawECG(); } console.log("Rhythm mode changed to:", currentRhythmMode);});
+
+        startButton.addEventListener('click', startSimulation); stopButton.addEventListener('click', stopSimulation);
+        function blinkSenseLamp() { senseLamp.classList.add('sense-on'); setTimeout(() => { senseLamp.classList.remove('sense-on'); }, 150); }
+        function blinkPaceLamp() { paceLamp.classList.add('pace-on'); setTimeout(() => { paceLamp.classList.remove('pace-on'); }, 150); }
+        function generateAfibInterval() { const meanInterval = afibMeanRate > 0 ? 60000 / afibMeanRate : 1000; const variationMs = 1500; let interval = meanInterval + (Math.random() - 0.5) * variationMs; return Math.max(250, Math.min(2500, interval)); }
+
+
+        // --- Simulation State Reset Function ---
+        function resetSimulationState(clearElapsedTimeAndECG = true) {
+            if (clearElapsedTimeAndECG) { timeElapsed = 0; lastBeatTime = 0; ecgData = []; } else { lastBeatTime = timeElapsed; }
+            aflWaveCount = 0; beatCounter = 0; nextEctopicBeatTime = Infinity; vfCurrentAmplitude = 6; fibWaveNoiseOffset = 0;
+            isPauseActive = false; pauseEndTime = 0; lastPacingRate = parseInt(pacingRateSlider.value);
+            pacingAttemptCounter = 0; intrinsicAttemptCounter = 0;
+            avnrtState = 'idle'; avnrtBeatCount = 0; isNoiseActive = false; lastNoiseSpikeTime = 0;
+            isOversensingForced = false; // Reset forced oversensing flag
+
+            const baseTime = clearElapsedTimeAndECG ? 0 : lastBeatTime;
+            let rateForMode = intrinsicRate; intrinsicInterval = intrinsicRate > 0 ? 60000 / intrinsicRate : Infinity;
+            nextIntrinsicBeatTime = Infinity; nextPacingTime = baseTime + pacingInterval; nextVtBeatTime = Infinity; nextAflWaveTime = Infinity;
+
+            switch (currentRhythmMode) {
+                 case 'normal': case 'stElevation': case 'pac': case 'pvc': case 'wpw': nextIntrinsicBeatTime = baseTime + intrinsicInterval; break;
+                 case 'junctional': rateForMode = 50; intrinsicInterval = 60000 / rateForMode; nextIntrinsicBeatTime = baseTime + intrinsicInterval; break;
+                 case 'ventricular_escape': rateForMode = 30; intrinsicInterval = 60000 / rateForMode; nextIntrinsicBeatTime = baseTime + intrinsicInterval; break;
+                 case 'avnrt': intrinsicInterval = intrinsicRate > 0 ? 60000 / intrinsicRate : Infinity; nextIntrinsicBeatTime = baseTime + intrinsicInterval; avnrtState = 'idle'; avnrtBeatCount = 0; break;
+                 case 'ort': rateForMode = 150; intrinsicInterval = 60000 / rateForMode; nextIntrinsicBeatTime = baseTime + intrinsicInterval; break;
+                 case 'vt': nextVtBeatTime = baseTime + vtInterval; break;
+                 case 'afib': nextIntrinsicBeatTime = baseTime + generateAfibInterval(); break;
+                 case 'afl': nextAflWaveTime = baseTime + aflInterval; aflWaveCount = 0; break;
+                 case 'vf': vfPhase1 = Math.random() * Math.PI * 2; vfPhase2 = Math.random() * Math.PI * 2; vfPhase3 = Math.random() * Math.PI * 2; vfCurrentAmplitude = 6; break;
+            }
+            if (clearElapsedTimeAndECG || ['vf', 'afib', 'vt', 'avnrt', 'ort'].includes(currentRhythmMode)) { hrValueLargeDisplay.textContent = '--'; currentHRDisplay.textContent = '--'; lastHrValue = '--'; heartRateHistory = [];}
+            if (clearElapsedTimeAndECG || !simulationRunning) { pacingStatusDisplay.textContent = simulationRunning ? "待機中" : "停止中"; sensingStatusDisplay.textContent = "--"; captureStatusDisplay.textContent = "--"; alarmDisplay.textContent = ""; senseLamp.classList.remove('sense-on'); paceLamp.classList.remove('pace-on');}
+            if (clearElapsedTimeAndECG) { const currentBaseline = ecgHeight / 2; if (ecgData.length === 0) ecgData.push({ time: 0, value: currentBaseline }); }
+            if (currentRhythmMode === 'avnrt') { avnrtTriggerContainer.classList.remove('hidden'); avnrtTriggerButton.disabled = !simulationRunning; avnrtTriggerButton.textContent = "AVNRT 開始シーケンス実行"; } else { avnrtTriggerContainer.classList.add('hidden'); }
+        }
+
+        // --- Start Simulation ---
+        function startSimulation() { if (simulationRunning) return; initializeAudio(); simulationRunning = true; startButton.disabled = true; stopButton.disabled = false; lastTimestamp = performance.now(); heartRateHistory = []; isPauseActive = false; pauseEndTime = 0; lastPacingRate = parseInt(pacingRateSlider.value); overdriveSuppressionEnabled = overdriveSuppressionCheckbox.checked; intermittentLossEnabled = intermittentLossCheckbox.checked; unidirectionalBlockEnabled = unidirectionalBlockCheckbox.checked; pacingAttemptCounter = 0; intrinsicAttemptCounter = 0; avnrtState = 'idle'; avnrtBeatCount = 0; isNoiseActive = false; lastNoiseSpikeTime = 0; isOversensingForced = false; resetSimulationState(true); animationFrameId = requestAnimationFrame(simulationLoop); console.log("Simulation started"); }
+
+        // --- Stop Simulation ---
+        function stopSimulation() { if (!simulationRunning) return; simulationRunning = false; startButton.disabled = false; stopButton.disabled = true; cancelAnimationFrame(animationFrameId); animationFrameId = null; pacingStatusDisplay.textContent = "停止中"; sensingStatusDisplay.textContent = "--"; captureStatusDisplay.textContent = "--"; alarmDisplay.textContent = ""; console.log("Simulation stopped"); avnrtTriggerButton.disabled = true; isNoiseActive = false; }
+
+
+        // --- Main Simulation Loop ---
+        function simulationLoop(timestamp) {
+            if (!simulationRunning) return;
+            const deltaTime = timestamp - lastTimestamp; lastTimestamp = timestamp;
+            const cappedDeltaTime = Math.min(deltaTime, 100); timeElapsed += cappedDeltaTime;
+
+            // --- Update Forced Oversensing State (based on noise button and sensitivity setting) ---
+            isOversensingForced = isNoiseActive && sensitivity <= 10; // Oversense if noise active AND sensitivity <= 10mV
+
+            // --- Generate Noise Spikes (Visual Only) ---
+             if (isNoiseActive && (timeElapsed - lastNoiseSpikeTime) >= noiseSpikeInterval) {
+                lastNoiseSpikeTime = timeElapsed;
+                addNoiseSpikeToECG(timeElapsed); // Add visual spike to data
+            }
+
+            // --- Pause Handling ---
+            if (isPauseActive) { if (timeElapsed >= pauseEndTime) { /* End pause */ isPauseActive = false; pauseEndTime = 0; if (intrinsicRate > 0) { nextIntrinsicBeatTime = timeElapsed + intrinsicInterval; } else { nextIntrinsicBeatTime = Infinity; } /* cleanup alarm */ } else { /* Keep flat line */ const base = ecgHeight / 2; const lastPoint = ecgData.length > 0 ? ecgData[ecgData.length - 1] : null; if (!lastPoint || timeElapsed > lastPoint.time) { if (!lastPoint || Math.abs(lastPoint.value - base) > 1) { ecgData.push({ time: timeElapsed, value: base }); } else { ecgData.push({ time: timeElapsed, value: base });} } } }
+
+            // Flags & Status Reset
+            let eventOccurred = false; let beatDetectedForSound = false; let undersensingAlarm = false; let lossOfCaptureAlarm = false; let ectopicTriggeredThisCycle = false;
+            let currentSensingStatusText = "--"; // Default sensing status for non-noise events
+
+            // --- Baseline ECG Handling ---
+            if (currentRhythmMode === 'afib' && !isPauseActive) { addFibWaves(timeElapsed, cappedDeltaTime); }
+
+            // --- Ectopic Beat Triggering ---
+            // Prevent ectopic if pause or forced oversensing is inhibiting pacing implicitly
+            if (!isPauseActive && !isOversensingForced && ['pac', 'pvc'].includes(currentRhythmMode) && beatCounter >= ectopicFrequency && intrinsicInterval !== Infinity) { const ectopicTime = lastBeatTime + intrinsicInterval * 0.7; if (timeElapsed >= ectopicTime && (timeElapsed - lastBeatTime) > ARP) { eventOccurred = true; ectopicTriggeredThisCycle = true; beatDetectedForSound = true; lastBeatTime = timeElapsed; beatCounter = 0; nextIntrinsicBeatTime = timeElapsed + intrinsicInterval; let sensedEctopic = false; if (currentRhythmMode === 'pac') { addPACBeatToECG(timeElapsed); captureStatusDisplay.textContent = "PAC"; if (rWaveAmplitude >= sensitivity) sensedEctopic = true; } else { addPVCBeatToECG(timeElapsed); captureStatusDisplay.textContent = "PVC"; if (rWaveAmplitude >= sensitivity) sensedEctopic = true; } if (sensedEctopic) { currentSensingStatusText = currentRhythmMode.toUpperCase() + "検知"; blinkSenseLamp(); nextPacingTime = timeElapsed + pacingInterval; } else { currentSensingStatusText = "アンダーセンシング(" + currentRhythmMode.toUpperCase() + ")"; undersensingAlarm = true; } } }
+
+            // --- Underlying Rhythm Generation ---
+            // Skip if paused or forced oversensing might be occurring (to avoid conflicts with forced inhibition)
+            if (!ectopicTriggeredThisCycle && !isPauseActive && !isOversensingForced) {
+                switch (currentRhythmMode) {
+                    case 'normal': case 'stElevation': case 'pac': case 'pvc': case 'wpw':
+                        if (timeElapsed >= nextIntrinsicBeatTime && intrinsicInterval !== Infinity && (timeElapsed - lastBeatTime) > ARP) {
+                            eventOccurred = true; let generateQRS = true;
+                            if (unidirectionalBlockEnabled) { intrinsicAttemptCounter++; if (intrinsicAttemptCounter % 3 !== 1) { generateQRS = false; captureStatusDisplay.textContent = "自己脈(ブロック)"; } }
+                            if (generateQRS) { beatDetectedForSound = true; lastBeatTime = timeElapsed; beatCounter++; if (currentRhythmMode === 'wpw') { addWPWBeatToECG(timeElapsed); captureStatusDisplay.textContent = "自己脈 (WPW)"; } else if (currentRhythmMode === 'stElevation') { addSTElevationBeatToECG(timeElapsed); captureStatusDisplay.textContent = "自己脈 (ST上昇)"; } else { addIntrinsicBeatToECG(timeElapsed); captureStatusDisplay.textContent = "自己脈"; } if (rWaveAmplitude >= sensitivity) { currentSensingStatusText = "自己脈検知"; blinkSenseLamp(); nextPacingTime = timeElapsed + pacingInterval; } else { currentSensingStatusText = "アンダーセンシング"; undersensingAlarm = true; } } // Note: Undersensing only shown if not forced oversensing
+                            nextIntrinsicBeatTime = timeElapsed + intrinsicInterval;
+                        } break;
+                    case 'junctional': if (timeElapsed >= nextIntrinsicBeatTime && intrinsicInterval !== Infinity && (timeElapsed - lastBeatTime) > ARP) { eventOccurred = true; beatDetectedForSound = true; lastBeatTime = timeElapsed; beatCounter++; addJunctionalBeatToECG(timeElapsed); captureStatusDisplay.textContent = "接合部調律"; if (rWaveAmplitude >= sensitivity) { currentSensingStatusText = "自己脈検知"; blinkSenseLamp(); nextPacingTime = timeElapsed + pacingInterval; } else { currentSensingStatusText = "アンダーセンシング"; undersensingAlarm = true; } nextIntrinsicBeatTime = timeElapsed + intrinsicInterval; } break;
+                    case 'ventricular_escape': if (timeElapsed >= nextIntrinsicBeatTime && intrinsicInterval !== Infinity && (timeElapsed - lastBeatTime) > ARP) { eventOccurred = true; beatDetectedForSound = true; lastBeatTime = timeElapsed; beatCounter++; addVentricularEscapeBeatToECG(timeElapsed); captureStatusDisplay.textContent = "心室補充調律"; if (rWaveAmplitude >= sensitivity) { currentSensingStatusText = "自己脈検知"; blinkSenseLamp(); nextPacingTime = timeElapsed + pacingInterval; } else { currentSensingStatusText = "アンダーセンシング"; undersensingAlarm = true; } nextIntrinsicBeatTime = timeElapsed + intrinsicInterval; } break;
+                    case 'avnrt':
+                        switch (avnrtState) {
+                            case 'idle': intrinsicInterval = intrinsicRate > 0 ? 60000 / intrinsicRate : Infinity; if (timeElapsed >= nextIntrinsicBeatTime && intrinsicInterval !== Infinity && (timeElapsed - lastBeatTime) > ARP) { eventOccurred = true; beatDetectedForSound = true; lastBeatTime = timeElapsed; addIntrinsicBeatToECG(timeElapsed); captureStatusDisplay.textContent = "洞調律 (AVNRT待機)"; if (rWaveAmplitude >= sensitivity) { currentSensingStatusText = "自己脈検知"; blinkSenseLamp(); nextPacingTime = timeElapsed + pacingInterval; } else { currentSensingStatusText = "アンダーセンシング"; undersensingAlarm = true;} nextIntrinsicBeatTime = timeElapsed + intrinsicInterval; } break;
+                            case 'trigger_pac': if (timeElapsed >= nextIntrinsicBeatTime && (timeElapsed - lastBeatTime) > ARP) { eventOccurred = true; beatDetectedForSound = true; lastBeatTime = timeElapsed; addPACBeatToECG(timeElapsed); captureStatusDisplay.textContent = "PAC トリガー"; if (rWaveAmplitude >= sensitivity) { currentSensingStatusText = "PAC検知"; blinkSenseLamp(); nextPacingTime = timeElapsed + pacingInterval; } else { currentSensingStatusText = "アンダーセンシング(PAC)"; undersensingAlarm = true;} avnrtState = 'post_pac'; nextIntrinsicBeatTime = timeElapsed + avnrtPrProlongation; } break; // Schedule ~100ms after PAC time
+                            case 'post_pac': if (timeElapsed >= nextIntrinsicBeatTime && (timeElapsed - lastBeatTime) > ARP) { eventOccurred = true; beatDetectedForSound = true; lastBeatTime = timeElapsed; addAVNRTBeatToECG(timeElapsed); captureStatusDisplay.textContent = "AVNRT 開始"; if (rWaveAmplitude >= sensitivity) { currentSensingStatusText = "頻拍検知"; blinkSenseLamp(); nextPacingTime = timeElapsed + pacingInterval; } else { currentSensingStatusText = "アンダーセンシング(AVNRT)"; undersensingAlarm = true;} avnrtState = 'tachycardia'; nextIntrinsicBeatTime = timeElapsed + avnrtSvtInterval; } break;
+                            case 'tachycardia': if (timeElapsed >= nextIntrinsicBeatTime && (timeElapsed - lastBeatTime) > ARP) { eventOccurred = true; beatDetectedForSound = true; lastBeatTime = timeElapsed; addAVNRTBeatToECG(timeElapsed); captureStatusDisplay.textContent = "AVNRT"; if (rWaveAmplitude >= sensitivity) { currentSensingStatusText = "頻拍検知"; blinkSenseLamp(); nextPacingTime = timeElapsed + pacingInterval; } else { currentSensingStatusText = "アンダーセンシング(AVNRT)"; undersensingAlarm = true;} nextIntrinsicBeatTime = timeElapsed + avnrtSvtInterval; } break;
+                        } break; // End AVNRT
+                     case 'ort': if (timeElapsed >= nextIntrinsicBeatTime && intrinsicInterval !== Infinity && (timeElapsed - lastBeatTime) > ARP) { eventOccurred = true; beatDetectedForSound = true; lastBeatTime = timeElapsed; beatCounter++; addORTBeatToECG(timeElapsed); captureStatusDisplay.textContent = "ORT"; if (rWaveAmplitude >= sensitivity) { currentSensingStatusText = "頻拍検知"; blinkSenseLamp(); nextPacingTime = timeElapsed + pacingInterval; } else { currentSensingStatusText = "アンダーセンシング(ORT)"; undersensingAlarm = true; } nextIntrinsicBeatTime = timeElapsed + intrinsicInterval;} break;
+                     case 'vt': if (timeElapsed >= nextVtBeatTime) { eventOccurred = true; beatDetectedForSound = true; lastBeatTime = timeElapsed; addVTBeatToECG(timeElapsed); captureStatusDisplay.textContent = "VT"; if (rWaveAmplitude >= sensitivity) { currentSensingStatusText = "VT検知"; blinkSenseLamp(); nextPacingTime = timeElapsed + pacingInterval; } else { currentSensingStatusText = "アンダーセンシング(VT)"; undersensingAlarm = true; } nextVtBeatTime = timeElapsed + vtInterval; } break;
+                     case 'vf': break;
+                     case 'afl': if (timeElapsed >= nextAflWaveTime) { addFlutterWave(timeElapsed); nextAflWaveTime = timeElapsed + aflInterval; aflWaveCount++; if (aflWaveCount % 3 === 0 && (timeElapsed - lastBeatTime) > ARP) { eventOccurred = true; beatDetectedForSound = true; lastBeatTime = timeElapsed; addIntrinsicBeatToECG(timeElapsed, true); captureStatusDisplay.textContent = "AFL 3:1伝導"; beatCounter++; if (rWaveAmplitude >= sensitivity) { currentSensingStatusText = "AFL伝導検知"; blinkSenseLamp(); nextPacingTime = timeElapsed + pacingInterval; } else { currentSensingStatusText = "アンダーセンシング(AFL)"; undersensingAlarm = true; } } } break;
+                     case 'afib': if (timeElapsed >= nextIntrinsicBeatTime && (timeElapsed - lastBeatTime) > ARP) { eventOccurred = true; beatDetectedForSound = true; lastBeatTime = timeElapsed; addIntrinsicBeatToECG(timeElapsed, true); captureStatusDisplay.textContent = "自己脈 (Afib)"; beatCounter++; if (rWaveAmplitude >= sensitivity) { currentSensingStatusText = "自己脈検知"; blinkSenseLamp(); nextPacingTime = timeElapsed + pacingInterval; } else { currentSensingStatusText = "アンダーセンシング(Afib)"; undersensingAlarm = true; } nextIntrinsicBeatTime = timeElapsed + generateAfibInterval(); } break;
+                } // End switch
+            } // End underlying rhythm block
+
+            // --- VF Drawing ---
+             if (currentRhythmMode === 'vf' && !isPauseActive) { addVFToECG(timeElapsed, cappedDeltaTime); currentSensingStatusText = "VF検知不能"; captureStatusDisplay.textContent = "VF"; }
+
+            // --- Pacing Logic ---
+            if (timeElapsed >= nextPacingTime) {
+                // ★ Check for Forced Oversensing FIRST ★
+                if (isOversensingForced) {
+                    //console.log("!!! Pacing Inhibited due to Forced Oversensing !!!");
+                    // Set status directly, don't rely on currentSensingStatusText here
+                    if (sensingStatusDisplay.textContent !== "オーバーセンス(ノイズ)") {
+                         sensingStatusDisplay.textContent = "オーバーセンス(ノイズ)";
+                    }
+                    blinkSenseLamp(); // Blink sense lamp for oversensing
+                    nextPacingTime = timeElapsed + pacingInterval; // Reset pacing timer (Inhibit)
+                    // Don't set eventOccurred or other flags as no real beat/pacing happened
+                }
+                // ★ If NOT Forced Oversensing, proceed with normal pacing attempt ★
+                else if (currentRhythmMode !== 'vf') {
+                     eventOccurred = true; pacingStatusDisplay.textContent = "ペーシング試行"; blinkPaceLamp(); addPacingSpikeToECG(timeElapsed); pacingAttemptCounter++; let forceLoss = false; if (intermittentLossEnabled && pacingAttemptCounter % 6 === 0) { forceLoss = true; console.log("Forced Loss triggered."); } if (!forceLoss && pacingOutput >= pacingThreshold) { pacingStatusDisplay.textContent = "ペーシング(成功)"; beatDetectedForSound = true; lastBeatTime = timeElapsed; if (currentRhythmMode === 'stElevation') { addCapturedSTElevationBeatToECG(timeElapsed); captureStatusDisplay.textContent = "成功 (Capture ST上昇)"; } else { addCapturedBeatToECG(timeElapsed); captureStatusDisplay.textContent = "成功 (Capture)"; } if (!unidirectionalBlockEnabled) { /* Reset timers if UniBlock OFF */ if (['normal', 'stElevation', 'pac', 'pvc', 'wpw', 'junctional', 'ventricular_escape'].includes(currentRhythmMode) && !isPauseActive) { nextIntrinsicBeatTime = timeElapsed + intrinsicInterval; } else if (currentRhythmMode === 'afib' && !isPauseActive) { nextIntrinsicBeatTime = timeElapsed + generateAfibInterval(); } else if (currentRhythmMode === 'vt') { nextVtBeatTime = timeElapsed + vtInterval; } else if (currentRhythmMode === 'avnrt' || currentRhythmMode === 'ort') { nextIntrinsicBeatTime = timeElapsed + (currentRhythmMode === 'avnrt' ? avnrtSvtInterval : intrinsicInterval); if(currentRhythmMode === 'avnrt') { avnrtState = 'tachycardia'; } } else if (currentRhythmMode === 'afl') { nextAflWaveTime = timeElapsed + aflInterval; } } else { console.log("UniBlock ON: Timers NOT reset after capture."); } nextPacingTime = timeElapsed + pacingInterval; } else { if (forceLoss) { captureStatusDisplay.textContent = "失敗 (間欠的Loss)"; } else { captureStatusDisplay.textContent = "失敗 (Loss)"; } pacingStatusDisplay.textContent = "ペーシング(失敗)"; lossOfCaptureAlarm = true; nextPacingTime = timeElapsed + pacingInterval; }
+                } else { // VF pacing attempt
+                    pacingStatusDisplay.textContent = "ペーシング試行(VF)"; blinkPaceLamp(); addPacingSpikeToECG(timeElapsed); captureStatusDisplay.textContent = "VF (ペーシング無効)"; nextPacingTime = timeElapsed + pacingInterval;
+                }
+            }
+
+            // --- Update Sensing Status Display ---
+            if (!isOversensingForced) { // Only update based on events if not forced oversensing
+                 if (currentSensingStatusText !== "--") {
+                     sensingStatusDisplay.textContent = currentSensingStatusText;
+                 } else if (!eventOccurred && sensingStatusDisplay.textContent !== "--" && timeElapsed > lastBeatTime + 1000 && !sensingStatusDisplay.textContent.includes("ノイズ")){ // Clear if inactive, but don't clear noise status
+                    sensingStatusDisplay.textContent = "--";
+                 }
+            } else {
+                 // Ensure oversensing message persists if forced oversensing is active
+                 if (sensingStatusDisplay.textContent !== "オーバーセンス(ノイズ)") {
+                     sensingStatusDisplay.textContent = "オーバーセンス(ノイズ)";
+                 }
+            }
+
+
+            // --- Update HR and Sound ---
+            if (beatDetectedForSound) { if (currentRhythmMode !== 'vf' && !isPauseActive) { updateHeartRate(timeElapsed); } playBeep(); }
+            if (isPauseActive || currentRhythmMode === 'vf') { if (hrValueLargeDisplay.textContent !== '--') { hrValueLargeDisplay.textContent = '--'; currentHRDisplay.textContent = '--'; lastHrValue = '--'; } }
+            else { if (hrValueLargeDisplay.textContent !== String(lastHrValue)) { hrValueLargeDisplay.textContent = lastHrValue === '--' ? '--' : String(lastHrValue); } }
+
+            // --- Update Alarm Display ---
+            let currentAlarms = [];
+            if (isOversensingForced) { currentAlarms.push("オーバーセンス"); }
+            else if (undersensingAlarm) { currentAlarms.push("アンダーセンシング"); }
+            if (lossOfCaptureAlarm) currentAlarms.push("ロスキャプチャ");
+            if (currentRhythmMode === 'vt' && !isPauseActive) currentAlarms.push("VT発生中"); if (currentRhythmMode === 'vf' && !isPauseActive) currentAlarms.push("VF発生中 - 除細動要"); if (currentRhythmMode === 'afib' && !isPauseActive && lastHrValue !== '--' && lastHrValue > 120) currentAlarms.push("Afib - Rapid Rate"); if (isPauseActive) currentAlarms.push("ポーズ発生"); if (unidirectionalBlockEnabled) currentAlarms.push("CaptureBeat ON"); if (intermittentLossEnabled) currentAlarms.push("間欠Loss ON");
+            alarmDisplay.textContent = currentAlarms.join(' / ');
+
+            // --- Draw ECG ---
+            drawECG();
+
+            // --- Request Next Frame ---
+            animationFrameId = requestAnimationFrame(simulationLoop);
+        } // End of simulationLoop
+
+
+        // --- ECG Drawing & Beat Morphology Functions ---
+        function clearECG() { const currentWidth=canvas.clientWidth; const currentHeight=canvas.clientHeight; if(ecgWidth!==currentWidth||ecgHeight!==currentHeight){ ecgWidth=currentWidth; ecgHeight=currentHeight; canvas.width=ecgWidth*window.devicePixelRatio; canvas.height=ecgHeight*window.devicePixelRatio; ctx.scale(window.devicePixelRatio,window.devicePixelRatio); } ctx.fillStyle='#000000'; ctx.fillRect(0,0,ecgWidth,ecgHeight); }
+        function drawECG() { clearECG(); const currentBaseline = ecgHeight / 2; drawGrid(currentBaseline); ctx.strokeStyle = '#00ff00'; ctx.lineWidth = 1.5; ctx.beginPath(); const timeWindowDuration = (ecgWidth / timeScale) * 1000; let startTime = timeElapsed - timeWindowDuration; let startIndex = ecgData.findIndex(p => p.time >= startTime - 500); if (startIndex === -1) startIndex = 0; if (startIndex > 0) startIndex--; let firstPoint = true; let lastX = -1, lastY = -1; for (let i = startIndex; i < ecgData.length; i++) { const point = ecgData[i]; const x = (point.time - startTime) * timeScale / 1000; let y = point.value; y = Math.max(5, Math.min(ecgHeight - 5, y)); if(isNaN(y)) y = currentBaseline; if(x>=-10&&x<=ecgWidth+10){ if (point.type === 'spike') { /* Don't draw spike in green */ firstPoint = true; /* Break line segment */ } else { if (firstPoint) { ctx.moveTo(x,y); firstPoint = false; } else { ctx.lineTo(x,y); } } }else if(x>ecgWidth+10&&!firstPoint){ ctx.lineTo(x,y); break; } } ctx.stroke(); /* Draw Spikes separately */ ctx.strokeStyle = '#ffff00'; /* Yellow */ ctx.lineWidth = 1.5; ctx.beginPath(); let drawingSpike = false; for (let i = startIndex; i < ecgData.length; i++) { const point = ecgData[i]; const x = (point.time - startTime) * timeScale / 1000; let y = point.value; y = Math.max(5, Math.min(ecgHeight - 5, y)); if(isNaN(y)) y = currentBaseline; const isSpikePoint = point.type && point.type.startsWith('spike'); if (isSpikePoint) { if (x >= -10 && x <= ecgWidth + 10) { if (!drawingSpike) { let prevX = x, prevY = y; if (i > startIndex && ecgData[i-1] && !ecgData[i-1].type?.startsWith('spike')) { prevX = (ecgData[i-1].time - startTime) * timeScale / 1000; prevY = Math.max(5, Math.min(ecgHeight - 5, ecgData[i-1].value)); if(isNaN(prevY)) prevY = currentBaseline; ctx.moveTo(prevX, prevY); } else { ctx.moveTo(x, y); } drawingSpike = true; } ctx.lineTo(x, y); } } else { drawingSpike = false; } } ctx.stroke(); /* Pruning */ const cutoffTime = startTime - 2000; const cutoffIndex = ecgData.findIndex(p => p.time >= cutoffTime); if (cutoffIndex > 1) { ecgData = ecgData.slice(cutoffIndex - 1); } const maxDataPoints = (timeScale * 30) * 2; if (ecgData.length > maxDataPoints) { ecgData = ecgData.slice(ecgData.length - maxDataPoints); } }
+        function drawGrid(baseline) { const smallGridPixels=5*window.devicePixelRatio; const majorGridPixels=smallGridPixels*5; ctx.strokeStyle='#333333'; ctx.lineWidth=0.5; for(let x=0; x<ecgWidth; x+=smallGridPixels){ if(x%majorGridPixels!==0){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,ecgHeight); ctx.stroke(); } } for(let y=0; y<ecgHeight; y+=smallGridPixels){ if(y%majorGridPixels!==0){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(ecgWidth,y); ctx.stroke(); } } ctx.strokeStyle='#555555'; ctx.lineWidth=0.7; for(let x=0; x<ecgWidth; x+=majorGridPixels){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,ecgHeight); ctx.stroke(); } for(let y=0; y<ecgHeight; y+=majorGridPixels){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(ecgWidth,y); ctx.stroke(); } }
+        function addIntrinsicBeatToECG(time, qrsOnly = false) { const base=ecgHeight/2; const qrsDuration=100; const tDuration=180; const pDuration=80; const prInterval=120; const stSegment=80; const maxAmp=base*0.9; const pAmp=Math.min(rWaveAmplitude*0.15*amplitudeScale, maxAmp*0.2); const qrsAmp=Math.min(rWaveAmplitude*amplitudeScale, maxAmp); const tAmp=Math.min(rWaveAmplitude*0.3*amplitudeScale, maxAmp*0.4); const qrsStart=time; const pStart=qrsStart-prInterval; const tStart=qrsStart+qrsDuration+stSegment; const lastPoint=ecgData.length>0?ecgData[ecgData.length-1]:null; const requiredStartTime=qrsOnly?(qrsStart-10):(pStart-pDuration/2); if(!lastPoint||lastPoint.time<requiredStartTime-5){ ecgData.push({time:requiredStartTime-5, value:base}); } if(!qrsOnly){ ecgData.push({time:pStart-pDuration/2, value:base}); ecgData.push({time:pStart, value:base-pAmp}); ecgData.push({time:pStart+pDuration/2, value:base}); ecgData.push({time:qrsStart-10, value:base}); }else{ ecgData.push({time:qrsStart-10, value:base}); } ecgData.push({time:qrsStart, value:base}); ecgData.push({time:qrsStart+qrsDuration*0.1, value:base+qrsAmp*0.1}); ecgData.push({time:qrsStart+qrsDuration*0.5, value:base-qrsAmp}); ecgData.push({time:qrsStart+qrsDuration*0.9, value:base+qrsAmp*0.2}); ecgData.push({time:qrsStart+qrsDuration, value:base}); ecgData.push({time:tStart-stSegment/2, value:base}); ecgData.push({time:tStart, value:base}); ecgData.push({time:tStart+tDuration*0.5, value:base-tAmp}); ecgData.push({time:tStart+tDuration, value:base}); ecgData.push({time:tStart+tDuration+50, value:base}); }
+        function addSTElevationBeatToECG(time) { const base=ecgHeight/2; const qrsDuration=100; const tDuration=180; const pDuration=80; const prInterval=120; const stSegmentDuration=120; const maxAmp=base*0.9; const pAmp=Math.min(rWaveAmplitude*0.15*amplitudeScale, maxAmp*0.2); const qrsAmp=Math.min(rWaveAmplitude*amplitudeScale, maxAmp); const tAmp=Math.min(rWaveAmplitude*0.3*amplitudeScale, maxAmp*0.4); const elevation=Math.min(stElevationAmount, maxAmp*0.3); const qrsStart=time; const pStart=qrsStart-prInterval; const stStart=qrsStart+qrsDuration; const tStart=stStart+stSegmentDuration; const lastPoint=ecgData.length>0?ecgData[ecgData.length-1]:null; if(!lastPoint||lastPoint.time<pStart-pDuration/2-5){ ecgData.push({time:pStart-pDuration/2-5, value:base}); } ecgData.push({time:pStart-pDuration/2, value:base}); ecgData.push({time:pStart, value:base-pAmp}); ecgData.push({time:pStart+pDuration/2, value:base}); ecgData.push({time:qrsStart-10, value:base}); ecgData.push({time:qrsStart, value:base}); ecgData.push({time:qrsStart+qrsDuration*0.1, value:base+qrsAmp*0.1}); ecgData.push({time:qrsStart+qrsDuration*0.5, value:base-qrsAmp}); const jPointValue=base-elevation; ecgData.push({time:qrsStart+qrsDuration*0.9, value:base-qrsAmp*0.1}); ecgData.push({time:stStart, value:jPointValue}); const stEndValue=jPointValue-tAmp*0.2; ecgData.push({time:stStart+stSegmentDuration*0.5, value:jPointValue+(stEndValue-jPointValue)*0.5}); ecgData.push({time:stStart+stSegmentDuration, value:stEndValue}); ecgData.push({time:tStart, value:stEndValue}); ecgData.push({time:tStart+tDuration*0.5, value:stEndValue-tAmp}); ecgData.push({time:tStart+tDuration, value:base}); ecgData.push({time:tStart+tDuration+50, value:base}); }
+        function addPACBeatToECG(time) { const base = ecgHeight / 2; const qrsDuration = 100; const tDuration = 180; const pDuration = 80; const prInterval = 120; const stSegment = 80; const maxAmp = base * 0.9; const pAmpInverted = Math.min(rWaveAmplitude * 0.15 * amplitudeScale, maxAmp * 0.2); const qrsAmp = Math.min(rWaveAmplitude * amplitudeScale, maxAmp); const tAmp = Math.min(rWaveAmplitude * 0.3 * amplitudeScale, maxAmp * 0.4); const qrsStart = time; const pStart = qrsStart - prInterval; const tStart = qrsStart + qrsDuration + stSegment; const lastPoint=ecgData.length>0?ecgData[ecgData.length-1]:null; if(!lastPoint||lastPoint.time<pStart-pDuration/2-5){ ecgData.push({time:pStart-pDuration/2-5, value:base}); } ecgData.push({ time: pStart - pDuration / 2, value: base }); ecgData.push({ time: pStart, value: base + pAmpInverted }); /* UPWARD peak */ ecgData.push({ time: pStart + pDuration / 2, value: base }); ecgData.push({ time: qrsStart - 10, value: base }); ecgData.push({ time: qrsStart, value: base }); ecgData.push({ time: qrsStart + qrsDuration * 0.1, value: base + qrsAmp * 0.1 }); ecgData.push({ time: qrsStart + qrsDuration * 0.5, value: base - qrsAmp }); ecgData.push({ time: qrsStart + qrsDuration * 0.9, value: base + qrsAmp * 0.2 }); ecgData.push({ time: qrsStart + qrsDuration, value: base }); ecgData.push({ time: tStart - stSegment / 2, value: base }); ecgData.push({ time: tStart, value: base }); ecgData.push({ time: tStart + tDuration * 0.5, value: base - tAmp }); ecgData.push({ time: tStart + tDuration, value: base }); ecgData.push({ time: tStart + tDuration + 50, value: base }); }
+        function addPVCBeatToECG(time) { const base=ecgHeight/2; const qrsDuration=150; const tDuration=180; const stSegment=40; const maxAmp=base*0.95; const qrsAmp=Math.min(rWaveAmplitude*1.2*amplitudeScale, maxAmp); const tAmp=Math.min(qrsAmp*0.5, maxAmp*0.5); const qrsStart=time; const tStart=qrsStart+qrsDuration+stSegment; const lastPoint=ecgData.length>0?ecgData[ecgData.length-1]:null; if(!lastPoint||lastPoint.time<qrsStart-10){ ecgData.push({time:qrsStart-10, value:base}); } ecgData.push({time:qrsStart, value:base}); ecgData.push({time:qrsStart+qrsDuration*0.1, value:base-qrsAmp*0.2}); ecgData.push({time:qrsStart+qrsDuration*0.4, value:base-qrsAmp}); ecgData.push({time:qrsStart+qrsDuration*0.7, value:base-qrsAmp*0.3}); ecgData.push({time:qrsStart+qrsDuration*0.9, value:base+qrsAmp*0.1}); ecgData.push({time:qrsStart+qrsDuration, value:base}); ecgData.push({time:tStart-stSegment/2, value:base}); ecgData.push({time:tStart, value:base}); ecgData.push({time:tStart+tDuration*0.2, value:base+tAmp*0.7}); ecgData.push({time:tStart+tDuration*0.5, value:base+tAmp}); ecgData.push({time:tStart+tDuration*0.8, value:base+tAmp*0.3}); ecgData.push({time:tStart+tDuration, value:base}); ecgData.push({time:tStart+tDuration+50, value:base}); }
+        function addVTBeatToECG(time) { addPVCBeatToECG(time); }
+        function addFibWaves(time, deltaTime) { const base=ecgHeight/2; const fibAmplitude=0.6*amplitudeScale; const pointsToAdd=Math.max(1,Math.floor(deltaTime/5)); const lastPoint=ecgData.length>0?ecgData[ecgData.length-1]:{value:base,time:time-deltaTime}; const isNearBaseline=Math.abs(lastPoint.value-base)<5*amplitudeScale; let lastAddedTime=lastPoint.time; for(let i=1; i<=pointsToAdd; i++){ const pointTime=lastPoint.time+(deltaTime*i/pointsToAdd); if(pointTime<=lastAddedTime)continue; let yValue=isNearBaseline?base+(Math.random()-0.5)*2*fibAmplitude:lastPoint.value; ecgData.push({time:pointTime, value:yValue}); lastAddedTime=pointTime; } }
+        function addFlutterWave(time) { const base=ecgHeight/2; const waveDuration=aflInterval; const amplitude=Math.min(5*amplitudeScale, base*0.25); const startTime=time-waveDuration/2; const sharpPointTime=startTime+waveDuration*0.2; const endSlowSlopeTime=startTime+waveDuration; const lastPoint=ecgData.length>0?ecgData[ecgData.length-1]:null; if(!lastPoint||lastPoint.time<startTime-5){ ecgData.push({time:startTime-5, value:base}); } ecgData.push({time:startTime, value:base}); ecgData.push({time:sharpPointTime, value:base+amplitude}); ecgData.push({time:endSlowSlopeTime, value:base}); }
+        function addVFToECG(time, deltaTime) { const base=ecgHeight/2; const freq1=0.0035*Math.PI; const freq2=0.006*Math.PI; const freq3=0.010*Math.PI; vfCurrentAmplitude=Math.max(0.5, vfCurrentAmplitude*Math.pow(vfAmplitudeDecayFactor, deltaTime/16)); const pointsToAdd=Math.max(1,Math.floor(deltaTime/8)); const lastPointTime=ecgData.length>0?ecgData[ecgData.length-1].time:time-deltaTime; let lastAddedTime=lastPointTime; for(let i=1; i<=pointsToAdd; i++){ const pointTime=lastPointTime+(deltaTime*i/pointsToAdd); if(pointTime<=lastAddedTime)continue; vfPhase1+=(Math.random()-0.48)*0.08; vfPhase2+=(Math.random()-0.50)*0.10; vfPhase3+=(Math.random()-0.52)*0.12; const effectiveAmplitude=vfCurrentAmplitude * amplitudeScale * 0.5; const wave1=Math.sin(pointTime*freq1+vfPhase1)*effectiveAmplitude*0.6; const wave2=Math.sin(pointTime*freq2+vfPhase2)*effectiveAmplitude*0.3; const wave3=Math.sin(pointTime*freq3+vfPhase3)*effectiveAmplitude*0.1; ecgData.push({time:pointTime, value:base+wave1+wave2+wave3}); lastAddedTime=pointTime; } }
+        // ★ Modified addPacingSpikeToECG to add type property
+        function addPacingSpikeToECG(time) { const base=ecgHeight/2; const spikeHeight=Math.min(30*amplitudeScale, base*0.8); const spikeDuration=2; if (!ecgData.length || ecgData[ecgData.length - 1].time < time - spikeDuration * 2) { ecgData.push({ time: time - spikeDuration * 2, value: base, type:'baseline' }); } ecgData.push({time:time-spikeDuration, value:base, type:'spike_pre'}); ecgData.push({time:time, value:base-spikeHeight, type:'spike'}); ecgData.push({time:time+spikeDuration, value:base, type:'spike_post'}); ecgData.push({time:time+spikeDuration+5, value:base, type:'baseline'}); }
+        function addCapturedBeatToECG(time) { const base=ecgHeight/2; const qrsDuration=160; const tDuration=200; const stSegment=50; const maxAmp=base*0.9; const qrsAmp=Math.min(rWaveAmplitude*1.1*amplitudeScale, maxAmp); const tAmp=Math.min(qrsAmp*0.4, maxAmp*0.5); const qrsStartTime=time+5; const tStart=qrsStartTime+qrsDuration+stSegment; if (!ecgData.length || ecgData[ecgData.length - 1].time < qrsStartTime - 5) { ecgData.push({ time: qrsStartTime - 5, value: base }); } ecgData.push({time:qrsStartTime, value:base}); ecgData.push({time:qrsStartTime+qrsDuration*0.1, value:base+qrsAmp*0.1}); ecgData.push({time:qrsStartTime+qrsDuration*0.5, value:base+qrsAmp}); ecgData.push({time:qrsStartTime+qrsDuration*0.9, value:base+qrsAmp*0.2}); ecgData.push({time:qrsStartTime+qrsDuration, value:base}); ecgData.push({time:tStart-stSegment/2, value:base}); ecgData.push({time:tStart, value:base}); ecgData.push({time:tStart+tDuration*0.2, value:base-tAmp*0.7}); ecgData.push({time:tStart+tDuration*0.5, value:base-tAmp}); ecgData.push({time:tStart+tDuration*0.8, value:base-tAmp*0.3}); ecgData.push({time:tStart+tDuration, value:base}); ecgData.push({time:tStart+tDuration+50, value:base}); }
+        function addCapturedSTElevationBeatToECG(time) { addCapturedBeatToECG(time); }
+        function addJunctionalBeatToECG(time) { addIntrinsicBeatToECG(time, true); }
+        function addVentricularEscapeBeatToECG(time) { const base = ecgHeight / 2; const qrsDuration = 160; const tDuration = 200; const stSegment = 40; const maxAmp = base * 0.95; const qrsAmp = Math.min(rWaveAmplitude * 1.1 * amplitudeScale, maxAmp); const tAmp = Math.min(qrsAmp * 0.5, maxAmp * 0.5); const qrsStart = time; const tStart = qrsStart + qrsDuration + stSegment; if (!ecgData.length || ecgData[ecgData.length - 1].time < qrsStart - 10) { ecgData.push({ time: qrsStart - 10, value: base }); } ecgData.push({ time: qrsStart, value: base }); ecgData.push({ time: qrsStart + qrsDuration * 0.2, value: base + qrsAmp * 0.8 }); ecgData.push({ time: qrsStart + qrsDuration * 0.5, value: base + qrsAmp }); ecgData.push({ time: qrsStart + qrsDuration * 0.8, value: base + qrsAmp * 0.2 }); ecgData.push({ time: qrsStart + qrsDuration, value: base }); ecgData.push({ time: tStart - stSegment / 2, value: base }); ecgData.push({ time: tStart, value: base }); ecgData.push({ time: tStart + tDuration * 0.5, value: base - tAmp }); ecgData.push({ time: tStart + tDuration, value: base }); ecgData.push({ time: tStart + tDuration + 50, value: base }); }
+        // ★ WPW Beat with upward Delta (Negative Y)
+        function addWPWBeatToECG(time) { const base = ecgHeight / 2; const qrsDuration = 120; const tDuration = 180; const pDuration = 80; const prInterval = 60; const stSegment = 80; const deltaDuration = 50; const maxAmp = base * 0.9; const pAmp = Math.min(rWaveAmplitude * 0.15 * amplitudeScale, maxAmp * 0.2); const qrsAmp = Math.min(rWaveAmplitude * amplitudeScale, maxAmp); const tAmp = Math.min(rWaveAmplitude * 0.3 * amplitudeScale, maxAmp * 0.4); const deltaAmp = qrsAmp * 0.2; const qrsActualStart = time; const pStart = qrsActualStart - prInterval; const pEnd = pStart + pDuration; const qrsNominalStart = qrsActualStart + deltaDuration; const tStart = qrsActualStart + qrsDuration + stSegment; if (!ecgData.length || ecgData[ecgData.length - 1].time < pStart - 5) { ecgData.push({ time: pStart - 5, value: base }); } /* P wave */ ecgData.push({ time: pStart, value: base }); ecgData.push({ time: pStart + pDuration / 2, value: base - pAmp }); ecgData.push({ time: pEnd, value: base }); /* Delta Wave */ ecgData.push({ time: pEnd + 1, value: base }); const deltaEndValue = base - deltaAmp; /* Target Y (UPWARD) */ ecgData.push({ time: qrsActualStart + deltaDuration * 0.5, value: base + (deltaEndValue - base) * 0.5 }); ecgData.push({ time: qrsNominalStart, value: deltaEndValue }); /* QRS */ ecgData.push({ time: qrsNominalStart + (qrsDuration - deltaDuration) * 0.4, value: base - qrsAmp }); ecgData.push({ time: qrsNominalStart + (qrsDuration - deltaDuration) * 0.8, value: base + qrsAmp * 0.1 }); ecgData.push({ time: qrsActualStart + qrsDuration, value: base }); /* ST & T */ ecgData.push({ time: tStart - stSegment / 2, value: base }); ecgData.push({ time: tStart, value: base }); ecgData.push({ time: tStart + tDuration * 0.5, value: base - tAmp }); ecgData.push({ time: tStart + tDuration, value: base }); ecgData.push({ time: tStart + tDuration + 50, value: base }); }
+        function addAVNRTBeatToECG(time) { addJunctionalBeatToECG(time); }
+        function addORTBeatToECG(time) { const base=ecgHeight/2; const qrsDuration=100; const tDuration=180; const stSegment=80; const maxAmp=base*0.9; const qrsAmp=Math.min(rWaveAmplitude*amplitudeScale, maxAmp); const tAmp=Math.min(rWaveAmplitude*0.3*amplitudeScale, maxAmp*0.4); const pDurationRetro=80; const pAmpRetro=Math.min(rWaveAmplitude*0.10*amplitudeScale, maxAmp*0.15); const rpInterval=80; const qrsStart=time; const tStart=qrsStart+qrsDuration+stSegment; const retroPStartTime=qrsStart+qrsDuration+rpInterval-pDurationRetro/2; const retroPPeakTime=qrsStart+qrsDuration+rpInterval; const retroPEndTime=qrsStart+qrsDuration+rpInterval+pDurationRetro/2; if (!ecgData.length || ecgData[ecgData.length - 1].time < qrsStart - 10) { ecgData.push({ time: qrsStart - 10, value: base }); } /* QRS */ ecgData.push({ time: qrsStart, value: base }); ecgData.push({ time: qrsStart + qrsDuration * 0.1, value: base - qrsAmp * 0.1 }); ecgData.push({ time: qrsStart + qrsDuration * 0.5, value: base - qrsAmp }); ecgData.push({ time: qrsStart + qrsDuration * 0.9, value: base - qrsAmp * 0.1 }); ecgData.push({ time: qrsStart + qrsDuration, value: base }); /* ST & T */ ecgData.push({ time: tStart - stSegment / 2, value: base }); ecgData.push({ time: tStart, value: base }); ecgData.push({ time: tStart + tDuration * 0.5, value: base - tAmp }); ecgData.push({ time: tStart + tDuration, value: base }); /* Retrograde P */ ecgData.push({ time: retroPStartTime, value: base }); ecgData.push({ time: retroPPeakTime, value: base + pAmpRetro }); ecgData.push({ time: retroPEndTime, value: base }); ecgData.push({ time: retroPEndTime + 50, value: base }); }
+        // ★ Modified Noise Spike Function (Fixed 10mV, 1ms duration)
+        function addNoiseSpikeToECG(time) { const base = ecgHeight / 2; const spikeHeight = 10 * amplitudeScale; const spikeDuration = 1; const direction = Math.random() < 0.5 ? 1 : -1; let lastY = base; if (ecgData.length > 0) { const lastPoint = ecgData[ecgData.length - 1]; if (lastPoint && !isNaN(lastPoint.value)) { lastY = lastPoint.value; } } const t_pre = time - spikeDuration / 2; const t_peak = time; const t_post = time + spikeDuration / 2; const t_end = time + spikeDuration + 1; const lastDataTime = ecgData.length > 0 ? ecgData[ecgData.length - 1].time : -Infinity; if (t_pre > lastDataTime) ecgData.push({ time: t_pre, value: lastY, type: 'noise' }); if (t_peak > Math.max(lastDataTime, t_pre)) ecgData.push({ time: t_peak, value: lastY + direction * spikeHeight, type: 'noise' }); if (t_post > Math.max(lastDataTime, t_peak)) ecgData.push({ time: t_post, value: lastY, type: 'noise' }); if (t_end > Math.max(lastDataTime, t_post)) ecgData.push({ time: t_end, value: lastY, type: 'noise' }); }
+
+        // --- Helper Functions ---
+        function updateHeartRate(currentTime) { const windowSize=6000; const minBeatsForCalc=3; heartRateHistory.push(currentTime); heartRateHistory=heartRateHistory.filter(time=>currentTime-time<=windowSize); let hr='--'; if(heartRateHistory.length>=minBeatsForCalc){ let totalInterval=0; for(let i=1; i<heartRateHistory.length; i++){ totalInterval+=heartRateHistory[i]-heartRateHistory[i-1]; } const avgInterval=totalInterval/(heartRateHistory.length-1); if(avgInterval>0){ hr=Math.max(30,Math.min(300,Math.round(60000/avgInterval))); } }else if(heartRateHistory.length===2){ const lastInterval=heartRateHistory[1]-heartRateHistory[0]; if(lastInterval>0){ hr=Math.max(30,Math.min(300,Math.round(60000/lastInterval))); } } if(currentRhythmMode==='afib'&&heartRateHistory.length<5)hr='--'; lastHrValue=hr; currentHRDisplay.textContent=hr==='--'?'--':hr+" bpm"; }
+
+        // --- Initial Setup & Event Listeners ---
+        function initializeDisplays() { pacingRateValue.textContent=pacingRateSlider.value; pacingOutputValue.textContent=parseFloat(pacingOutputSlider.value).toFixed(1); sensitivityValue.textContent=parseFloat(sensitivitySlider.value).toFixed(1); intrinsicRateValue.textContent=intrinsicRateSlider.value; pacingThresholdValue.textContent=parseFloat(pacingThresholdSlider.value).toFixed(1); rWaveAmplitudeValue.textContent=parseFloat(rWaveAmplitudeSlider.value).toFixed(1); }
+        window.addEventListener('resize', ()=>{ if(!simulationRunning){ requestAnimationFrame(drawECG); } });
+        initializeDisplays();
+        requestAnimationFrame(()=>{ clearECG(); drawECG(); });
+
+    </script>
+
+</body>
+</html>
